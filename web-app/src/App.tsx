@@ -5,7 +5,6 @@ import {
   Table,
   Upload,
   message,
-  Space,
   Input,
   Form,
   Radio,
@@ -14,18 +13,36 @@ import {
   Progress,
   Select,
   ColorPicker,
+  Layout,
+  Typography,
+  Tag,
+  Tooltip,
+  Badge,
+  Space
 } from "antd";
-import { UploadOutlined, DownloadOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
+import {
+  UploadOutlined,
+  DownloadOutlined,
+  PlusOutlined,
+  DeleteOutlined,
+  QrcodeOutlined,
+  FileExcelOutlined,
+  SearchOutlined
+} from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import QRCodeStyling from "qr-code-styling";
+import "./App.css";
 
 import Mlogo from "./assets/logo.png";
-import Bg1 from "./assets/bg.png"; // Fixed
-import Bg2 from "./assets/bg.png"; // Fixed (placeholder)
-import Bg3 from "./assets/bg.png"; // Fixed (placeholder)
+import Bg1 from "./assets/bg.png";
+import Bg2 from "./assets/bg.png";
+import Bg3 from "./assets/bg.png";
+
+const { Content } = Layout;
+const { Title, Text } = Typography;
 
 // ---------- Типы ----------
 interface RowData {
@@ -51,15 +68,15 @@ interface TextOverlay {
   fontSize: number;
   position: PositionPct;
   fontFamily: string;
-  columnSource?: string; // Колонка-источник данных
-  isDynamic: boolean; // Динамический текст из данных или статический
+  columnSource?: string;
+  isDynamic: boolean;
 }
 
 // ---------- Константы ----------
 const modalSize = 490;
 const canvasSize = 5000;
 const margin = 200;
-const scaleRatio = canvasSize / modalSize; // ≈ 10.2
+const scaleRatio = canvasSize / modalSize;
 
 // ---------- Вспомогательные функции ----------
 const generateQrPng = async (data: string, centerImageUrl?: string) => {
@@ -94,7 +111,7 @@ const mergeQrWithBackground = async (
   posPct: PositionPct,
   qrSizePct: number,
   textOverlays: TextOverlay[] = [],
-  rowData?: RowData, // Добавляем данные строки для динамического текста
+  rowData?: RowData,
   canvasSizeParam = canvasSize,
   marginParam = margin
 ) => {
@@ -111,7 +128,6 @@ const mergeQrWithBackground = async (
 
   return new Promise<Blob>((resolve, reject) => {
     bgImg.onload = () => {
-      // === Вписываем фон целиком (object-fit: contain) ===
       const bgAspect = bgImg.width / bgImg.height;
       const canvasAspect = canvas.width / canvas.height;
 
@@ -131,10 +147,8 @@ const mergeQrWithBackground = async (
 
       ctx.fillStyle = "white";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-
       ctx.drawImage(bgImg, drawX, drawY, drawWidth, drawHeight);
 
-      // === Рисуем QR ===
       qrImg.onload = () => {
         const maxQrSize = canvasSizeParam - marginParam * 2;
         const targetSize = Math.min(maxQrSize, Math.round(canvasSizeParam * qrSizePct));
@@ -152,15 +166,12 @@ const mergeQrWithBackground = async (
 
         ctx.drawImage(qrImg, drawX, drawY, targetSize, targetSize);
 
-        // === Рисуем текстовые overlay'и ===
         textOverlays.forEach(overlay => {
-          // Определяем текст: статический или из данных
           let displayText = overlay.text;
           if (overlay.isDynamic && overlay.columnSource && rowData) {
             displayText = rowData[overlay.columnSource] || overlay.text;
           }
 
-          // Масштабируем размер шрифта для canvas 5000px
           const scaledFontSize = overlay.fontSize * scaleRatio;
 
           ctx.fillStyle = overlay.color;
@@ -171,7 +182,6 @@ const mergeQrWithBackground = async (
           const textX = Math.round(overlay.position.xPct * canvasSizeParam);
           const textY = Math.round(overlay.position.yPct * canvasSizeParam);
 
-          // Добавляем тень для лучшей читаемости
           ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
           ctx.shadowBlur = 15;
           ctx.shadowOffsetX = 5;
@@ -179,7 +189,6 @@ const mergeQrWithBackground = async (
 
           ctx.fillText(displayText, textX, textY);
 
-          // Сбрасываем тень
           ctx.shadowColor = 'transparent';
           ctx.shadowBlur = 0;
           ctx.shadowOffsetX = 0;
@@ -212,17 +221,16 @@ const App: React.FC = () => {
   const [downloadModalVisible, setDownloadModalVisible] = useState(false);
   const [allModalVisible, setAllModalVisible] = useState(false);
   const [qrPosPct, setQrPosPct] = useState<PositionPct>({ xPct: 0.2, yPct: 0.2 });
-  const [qrSizePct, setQrSizePct] = useState<number>(0.24);
+  const [qrSizePct, setQrSizePct] = useState<number>(0.18);
   const [selectedBg, setSelectedBg] = useState<string>(Bg1);
   const [userBg, setUserBg] = useState<string | null>(null);
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generatedQrs, setGeneratedQrs] = useState<Record<string, Blob>>({});
   const [progress, setProgress] = useState<number>(0);
   const [searchText, setSearchText] = useState("");
-  const [saveColumns] = useState<string[]>([]); // eslint-disable-line @typescript-eslint/no-unused-vars
-  const [customNamePattern] = useState<string>(""); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [saveColumns] = useState<string[]>([]);
+  const [customNamePattern] = useState<string>("");
 
-  // ---------- Text Overlay State ----------
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
 
@@ -235,10 +243,9 @@ const App: React.FC = () => {
     { label: "Свой фон", value: "user" },
   ];
 
-  // Получаем доступные колонки для выбора
   const availableColumns = useMemo(() => {
     return columns
-      .filter(col => col.dataIndex && col.dataIndex !== 'qr')
+      .filter(col => col.dataIndex && !['qr', 'status', 'actions'].includes(col.dataIndex))
       .map(col => ({
         label: col.title || col.dataIndex,
         value: col.dataIndex
@@ -265,7 +272,6 @@ const App: React.FC = () => {
     return row.name || row._link || row.key;
   };
 
-  // ---------- Text Overlay Functions ----------
   const addTextOverlay = () => {
     const newOverlay: TextOverlay = {
       id: Date.now().toString(),
@@ -274,7 +280,7 @@ const App: React.FC = () => {
       fontSize: 24,
       fontFamily: "Arial",
       position: { xPct: 0.5, yPct: 0.1 },
-      isDynamic: false // По умолчанию статический текст
+      isDynamic: false
     };
     setTextOverlays([...textOverlays, newOverlay]);
     setSelectedTextId(newOverlay.id);
@@ -296,7 +302,6 @@ const App: React.FC = () => {
   const handleTextDrag = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
     const startX = e.clientX;
     const startY = e.clientY;
     const overlay = textOverlays.find(t => t.id === id);
@@ -310,11 +315,8 @@ const App: React.FC = () => {
       const dy = moveEvent.clientY - startY;
       let newX = (startLeft + dx) / modalSize;
       let newY = (startTop + dy) / modalSize;
-
-      // Ограничиваем перемещение в пределах контейнера
       newX = Math.min(Math.max(0, newX), 1);
       newY = Math.min(Math.max(0, newY), 1);
-
       updateTextOverlay(id, { position: { xPct: newX, yPct: newY } });
     };
 
@@ -322,7 +324,6 @@ const App: React.FC = () => {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
-
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   };
@@ -331,14 +332,23 @@ const App: React.FC = () => {
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    const startLeft = previewLeft;
-    const startTop = previewTop;
+    // Calculate current pixel position based on percentage
+    // We need to re-calculate here because we don't have direct access to previewLeft/Top state inside this closure easily without dep change
+    // But we can just use the state qrPosPct
+    const currentPreviewLeft = Math.max(
+      0,
+      Math.min(modalSize - modalSize * qrSizePct, Math.round(qrPosPct.xPct * modalSize - (modalSize * qrSizePct) / 2))
+    );
+    const currentPreviewTop = Math.max(
+      0,
+      Math.min(modalSize - modalSize * qrSizePct, Math.round(qrPosPct.yPct * modalSize - (modalSize * qrSizePct) / 2))
+    );
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      const newLeft = Math.min(Math.max(0, startLeft + dx), modalSize - modalSize * qrSizePct);
-      const newTop = Math.min(Math.max(0, startTop + dy), modalSize - modalSize * qrSizePct);
+      const newLeft = Math.min(Math.max(0, currentPreviewLeft + dx), modalSize - modalSize * qrSizePct);
+      const newTop = Math.min(Math.max(0, currentPreviewTop + dy), modalSize - modalSize * qrSizePct);
       setQrPosPct({
         xPct: (newLeft + (modalSize * qrSizePct) / 2) / modalSize,
         yPct: (newTop + (modalSize * qrSizePct) / 2) / modalSize,
@@ -349,12 +359,10 @@ const App: React.FC = () => {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
-
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   };
 
-  // Получаем отображаемый текст для превью
   const getDisplayText = (overlay: TextOverlay, row?: RowData | null) => {
     if (overlay.isDynamic && overlay.columnSource && row) {
       return row[overlay.columnSource] || `{${overlay.columnSource}}`;
@@ -362,7 +370,6 @@ const App: React.FC = () => {
     return overlay.text;
   };
 
-  // File upload function
   const handleFileUpload = async (file: File) => {
     try {
       const reader = new FileReader();
@@ -380,43 +387,6 @@ const App: React.FC = () => {
           key: `col_${idx}`,
           editable: true,
         }));
-
-        cols.push({
-          title: "QR",
-          key: "qr",
-          render: (_: any, record: RowData) => (
-            <Space direction="vertical" align="center">
-              {record.qr ? (
-                <>
-                  <img src={record.qr} alt="qr" style={{ width: 140, height: 140 }} />
-                  <Button
-                    size="small"
-                    icon={<DownloadOutlined />}
-                    onClick={() => openSingleModal(record)}
-                  >
-                    Скачать
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  size="small"
-                  onClick={async () => {
-                    try {
-                      const qrBlob = await generateQrPng(record._link);
-                      const qrUrl = URL.createObjectURL(qrBlob);
-                      setData((prev) => prev.map((r) => (r.key === record.key ? { ...r, qrBlob, qr: qrUrl } : r)));
-                      message.success("QR сгенерирован");
-                    } catch {
-                      message.error("Ошибка при генерации QR");
-                    }
-                  }}
-                >
-                  Сгенерировать
-                </Button>
-              )}
-            </Space>
-          ),
-        });
 
         const tableData: RowData[] = [];
         for (let i = 1; i < rows.length; i++) {
@@ -444,7 +414,7 @@ const App: React.FC = () => {
     const lower = searchText.toLowerCase();
     return data.filter((row) =>
       Object.keys(row)
-        .filter((k) => !["qr", "qrBlob", "mergedBlob"].includes(k))
+        .filter((k) => !["qr", "qrBlob", "mergedBlob", "key"].includes(k))
         .some((key) => String(row[key] ?? "").toLowerCase().includes(lower))
     );
   }, [data, searchText]);
@@ -482,6 +452,7 @@ const App: React.FC = () => {
       saveAs(mergedBlob, `${getFileName(selectedRow)}.png`);
       setData((prev) => prev.map((r) => (r.key === selectedRow.key ? { ...r, mergedBlob } : r)));
       setDownloadModalVisible(false);
+      message.success("QR сохранен!");
     } catch {
       message.error("Ошибка при создании изображения");
     }
@@ -497,35 +468,31 @@ const App: React.FC = () => {
     try {
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
-
         if (!row.qrBlob) {
           try {
             const b = await generateQrPng(row._link);
             row.qrBlob = b;
             row.qr = URL.createObjectURL(b);
           } catch {
-            console.warn(`Ошибка при генерации QR для строки ${row.key}`);
             continue;
           }
         }
-
         try {
           const bg = selectedBg === "user" && userBg ? userBg : selectedBg;
           const mergedBlob = await mergeQrWithBackground(row.qrBlob, bg!, qrPosPct, qrSizePct, textOverlays, row);
           newGenerated[row.key] = mergedBlob;
           row.mergedBlob = mergedBlob;
         } catch (err) {
-          console.warn(`Ошибка при объединении QR и фона для строки ${row.key}:`, err);
+          console.warn(err);
         }
-
         setProgress(Math.round(((i + 1) / data.length) * 100));
       }
-
       setGeneratedQrs(newGenerated); // eslint-disable-line @typescript-eslint/no-unused-vars
       setData([...data]);
       message.success(`Сгенерировано ${Object.keys(newGenerated).length} изображений`);
     } finally {
       setIsGeneratingAll(false);
+      setAllModalVisible(false);
     }
   };
 
@@ -549,339 +516,111 @@ const App: React.FC = () => {
     }
   };
 
-  const mergedColumns = columns.map((col: any) => {
-    if (!col.editable) return col;
-    return {
+  // Define fixed columns
+  const tableColumns: ColumnsType<RowData> = [
+    // Data columns first
+    ...columns.map((col: any) => ({
       ...col,
       onCell: (record: RowData) => ({ record, dataIndex: col.dataIndex }),
-    };
-  });
-
-  // ---------- UI ----------
-  return (
-    <Form form={form} component={false}>
-      <div style={{ padding: 20 }}>
-        <Space style={{ marginBottom: 12 }}>
-          <Upload beforeUpload={handleFileUpload} showUploadList={false}>
-            <Button icon={<UploadOutlined />}>Загрузить Excel</Button>
-          </Upload>
+    })),
+    // Status Column
+    {
+      title: 'Статус',
+      key: 'status',
+      width: 150,
+      render: (_, record) => (
+        record.qr ? (
+          <Tag color="success" icon={<QrcodeOutlined />}>Сгенерирован</Tag>
+        ) : (
+          <Tag color="default">Не сгенерирован</Tag>
+        )
+      )
+    },
+    // QR Preview Column
+    {
+      title: 'QR',
+      key: 'qr_preview',
+      width: 80,
+      align: 'center',
+      render: (_, record) => (
+        record.qr ? (
+          <div className="qr-preview-cell" onClick={() => openSingleModal(record)}>
+            <img src={record.qr} alt="qr" className="qr-preview-img" />
+          </div>
+        ) : (
+          <Text type="secondary" style={{ fontSize: 12 }}>—</Text>
+        )
+      )
+    },
+    // Actions Column
+    {
+      title: 'Действия',
+      key: 'actions',
+      width: 140,
+      fixed: 'right',
+      render: (_, record) => (
+        record.qr ? (
           <Button
             type="primary"
-            onClick={() => setAllModalVisible(true)}
-            disabled={!data.length}
+            ghost
+            size="middle"
             icon={<DownloadOutlined />}
+            onClick={() => openSingleModal(record)}
           >
-            Сгенерировать / Скачать все
+            Скачать
           </Button>
-          <Input.Search
-            placeholder="Поиск..."
-            allowClear
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 240 }}
-          />
-        </Space>
+        ) : (
+          <Button
+            size="middle"
+            onClick={async () => {
+              try {
+                const qrBlob = await generateQrPng(record._link);
+                const qrUrl = URL.createObjectURL(qrBlob);
+                setData((prev) => prev.map((r) => (r.key === record.key ? { ...r, qrBlob, qr: qrUrl } : r)));
+                message.success("QR сгенерирован");
+              } catch {
+                message.error("Ошибка");
+              }
+            }}
+          >
+            Создать
+          </Button>
+        )
+      )
+    }
+  ];
 
-        <Table
-          columns={mergedColumns as ColumnsType<RowData>}
-          dataSource={filteredData}
-          pagination={{ pageSize: 10 }}
-          bordered
-        />
-
-        {/* Single Modal с текстовыми overlay'ями */}
-        <Modal
-          title="Переместите и настройте QR"
-          open={downloadModalVisible}
-          onCancel={() => {
-            setDownloadModalVisible(false);
-            setTextOverlays([]);
-          }}
-          onOk={handleDownloadOne}
-          okText="Скачать"
-          width={800}
-        >
-          <div style={{ display: "flex", gap: 20 }}>
-            {/* Левая панель - настройки */}
-            <div style={{ flex: 1 }}>
-              <p><strong>Фон:</strong></p>
-              <Radio.Group
-                value={selectedBg}
-                onChange={(e) => setSelectedBg(e.target.value)}
-                style={{ display: "flex", flexDirection: "column", gap: 8 }}
-              >
-                {bgTemplates.map((bg) => (
-                  <Radio key={bg.value} value={bg.value}>
-                    {bg.label}
-                  </Radio>
-                ))}
-              </Radio.Group>
-
-              {selectedBg === "user" && (
-                <Upload
-                  accept="image/*"
-                  showUploadList={false}
-                  beforeUpload={(file) => {
-                    const url = URL.createObjectURL(file);
-                    setUserBg(url);
-                    return false;
-                  }}
-                >
-                  <Button style={{ marginTop: 8 }}>Загрузить свой фон</Button>
-                </Upload>
-              )}
-
-              <p style={{ marginTop: 12 }}><strong>Размер QR:</strong> {(qrSizePct * 100).toFixed(0)}%</p>
-              <Slider min={0.05} max={0.8} step={0.01} value={qrSizePct} onChange={setQrSizePct} />
-
-              {/* Управление текстовыми overlay'ями */}
-              <div style={{ marginTop: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <p style={{ margin: 0, fontWeight: 'bold' }}>Текстовые overlay'и:</p>
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={addTextOverlay}
-                  >
-                    Добавить текст
-                  </Button>
-                </div>
-
-                {textOverlays.length === 0 ? (
-                  <p style={{ color: '#999', fontStyle: 'italic' }}>Нет добавленных текстов</p>
-                ) : (
-                  textOverlays.map((overlay) => (
-                    <div
-                      key={overlay.id}
-                      style={{
-                        padding: 8,
-                        marginBottom: 8,
-                        border: selectedTextId === overlay.id ? '2px solid #1890ff' : '1px solid #d9d9d9',
-                        borderRadius: 4,
-                        cursor: 'pointer',
-                        backgroundColor: selectedTextId === overlay.id ? '#f0f8ff' : '#fff'
-                      }}
-                      onClick={() => setSelectedTextId(overlay.id)}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span style={{ fontWeight: 'bold' }}>
-                            {getDisplayText(overlay, selectedRow)}
-                          </span>
-                          {overlay.isDynamic && (
-                            <span style={{ fontSize: 10, color: '#52c41a', marginLeft: 8 }}>
-                              [из {overlay.columnSource}]
-                            </span>
-                          )}
-                        </div>
-                        <Button
-                          type="text"
-                          danger
-                          size="small"
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteTextOverlay(overlay.id);
-                          }}
-                        />
-                      </div>
-
-                      {selectedTextId === overlay.id && (
-                        <div style={{ marginTop: 8 }}>
-                          {/* Переключатель типа текста */}
-                          <div style={{ marginBottom: 8 }}>
-                            <Radio.Group
-                              value={overlay.isDynamic ? 'dynamic' : 'static'}
-                              onChange={(e) => {
-                                const isDynamic = e.target.value === 'dynamic';
-                                updateTextOverlay(overlay.id, {
-                                  isDynamic,
-                                  text: isDynamic ? '' : 'Ваш текст'
-                                });
-                              }}
-                            >
-                              <Radio value="static">Статический текст</Radio>
-                              <Radio value="dynamic" disabled={availableColumns.length === 0}>
-                                Из данных {availableColumns.length === 0 && '(нет колонок)'}
-                              </Radio>
-                            </Radio.Group>
-                          </div>
-
-                          {overlay.isDynamic ? (
-                            // Выбор колонки для динамического текста
-                            <Select
-                              value={overlay.columnSource}
-                              onChange={(value) => updateTextOverlay(overlay.id, { columnSource: value })}
-                              placeholder="Выберите колонку"
-                              style={{ width: '100%', marginBottom: 8 }}
-                              size="small"
-                            >
-                              {availableColumns.map(col => (
-                                <Select.Option key={col.value} value={col.value}>
-                                  {col.label} ({col.value})
-                                </Select.Option>
-                              ))}
-                            </Select>
-                          ) : (
-                            // Статический текст
-                            <Input
-                              value={overlay.text}
-                              onChange={(e) => updateTextOverlay(overlay.id, { text: e.target.value })}
-                              placeholder="Введите текст"
-                              style={{ marginBottom: 8 }}
-                            />
-                          )}
-
-                          <div style={{ marginBottom: 8 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                              <span style={{ fontSize: 12 }}>Размер текста: {overlay.fontSize}px</span>
-                              <span style={{ fontSize: 10, color: '#999' }}>
-                                (на изображении: {Math.round(overlay.fontSize * scaleRatio)}px)
-                              </span>
-                            </div>
-                            <Slider
-                              min={8}
-                              max={72}
-                              step={1}
-                              value={overlay.fontSize}
-                              onChange={(value) => updateTextOverlay(overlay.id, { fontSize: value })}
-                            />
-                          </div>
-
-                          <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                            <span style={{ fontSize: 12 }}>Цвет:</span>
-                            <ColorPicker
-                              value={overlay.color}
-                              onChange={(color) => updateTextOverlay(overlay.id, { color: color.toHexString() })}
-                              size="small"
-                            />
-                          </div>
-
-                          <Select
-                            value={overlay.fontFamily}
-                            onChange={(value) => updateTextOverlay(overlay.id, { fontFamily: value })}
-                            style={{ width: '100%' }}
-                            size="small"
-                          >
-                            <Select.Option value="Arial">Arial</Select.Option>
-                            <Select.Option value="Times New Roman">Times New Roman</Select.Option>
-                            <Select.Option value="Georgia">Georgia</Select.Option>
-                            <Select.Option value="Verdana">Verdana</Select.Option>
-                            <Select.Option value="Tahoma">Tahoma</Select.Option>
-                            <Select.Option value="Impact">Impact</Select.Option>
-                          </Select>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Правая панель - превью */}
-            <div style={{ flex: 1 }}>
-              <div
-                style={{
-                  width: modalSize,
-                  height: modalSize,
-                  position: "relative",
-                  border: "1px solid #ccc",
-                  backgroundImage: `url(${selectedBg === "user" && userBg ? userBg : selectedBg})`,
-                  backgroundSize: "contain",
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  backgroundColor: "#fff",
-                }}
-                ref={containerRef}
-              >
-                {/* QR код */}
-                {selectedRow?.qr && (
-                  <img
-                    src={selectedRow.qr}
-                    alt="QR"
-                    style={{
-                      position: "absolute",
-                      left: previewLeft,
-                      top: previewTop,
-                      width: modalSize * qrSizePct,
-                      height: modalSize * qrSizePct,
-                      cursor: "grab",
-                      userSelect: "none",
-                    }}
-                    onMouseDown={handleQrDrag}
-                  />
-                )}
-
-                {/* Текстовые overlay'и */}
-                {textOverlays.map((overlay) => (
-                  <div
-                    key={overlay.id}
-                    style={{
-                      position: "absolute",
-                      left: overlay.position.xPct * modalSize - 50,
-                      top: overlay.position.yPct * modalSize - overlay.fontSize / 2,
-                      color: overlay.color,
-                      fontSize: overlay.fontSize,
-                      fontFamily: overlay.fontFamily,
-                      fontWeight: "bold",
-                      cursor: "move",
-                      userSelect: "none",
-                      textShadow: "2px 2px 4px rgba(0,0,0,0.8)",
-                      border: selectedTextId === overlay.id ? "2px dashed #1890ff" : "1px dashed rgba(255,255,255,0.5)",
-                      padding: "4px 8px",
-                      background: selectedTextId === overlay.id ? "rgba(24, 144, 255, 0.2)" : "rgba(0, 0, 0, 0.3)",
-                      borderRadius: "4px",
-                      minWidth: 100,
-                      textAlign: "center",
-                      whiteSpace: 'nowrap',
-                      backdropFilter: 'blur(2px)',
-                    }}
-                    onMouseDown={(e) => handleTextDrag(overlay.id, e)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedTextId(overlay.id);
-                    }}
-                  >
-                    {getDisplayText(overlay, selectedRow)}
-                  </div>
-                ))}
-              </div>
-              <p style={{ textAlign: 'center', marginTop: 8, color: '#666', fontSize: 12 }}>
-                Перетаскивайте QR и текст мышкой
-              </p>
-            </div>
-          </div>
-        </Modal>
-
-        {/* All Modal */}
-        <Modal
-          title="Настройки для всех QR"
-          open={allModalVisible}
-          onCancel={() => setAllModalVisible(false)}
-          footer={[
-            <Button key="generate" type="primary" onClick={generateAllQrs} disabled={isGeneratingAll}>
-              Сгенерировать все
-            </Button>,
-            <Button key="download" onClick={downloadAllZip} disabled={isGeneratingAll}>
-              Скачать ZIP
-            </Button>,
-          ]}
-          width={800}
-        >
-          <p>Фон:</p>
+  /* 
+    REUSABLE EDITOR COMPONENT RENDERER 
+    Accepts a 'previewRow' to show data.
+  */
+  const renderEditorContent = (previewRow: RowData | null) => (
+    <div style={{ display: "flex", gap: 24, padding: '20px 0' }}>
+      {/* Settings Panel */}
+      <div style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Background Selection */}
+        <div className="settings-block">
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>Выберите фон</Text>
           <Radio.Group
             value={selectedBg}
             onChange={(e) => setSelectedBg(e.target.value)}
-            style={{ display: "flex", flexDirection: "column", gap: 8 }}
+            style={{ width: '100%' }}
           >
-            {bgTemplates.map((bg) => (
-              <Radio key={bg.value} value={bg.value}>
-                {bg.label}
-              </Radio>
-            ))}
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {bgTemplates.map((bg) => (
+                <Radio key={bg.value} value={bg.value} style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #f0f0f0',
+                  borderRadius: 6,
+                  background: selectedBg === bg.value ? '#f6ffed' : 'transparent',
+                  borderColor: selectedBg === bg.value ? '#b7eb8f' : '#f0f0f0'
+                }}>
+                  {bg.label}
+                </Radio>
+              ))}
+            </Space>
           </Radio.Group>
-
           {selectedBg === "user" && (
             <Upload
               accept="image/*"
@@ -892,35 +631,354 @@ const App: React.FC = () => {
                 return false;
               }}
             >
-              <Button style={{ marginTop: 8 }}>Загрузить свой фон</Button>
+              <Button block style={{ marginTop: 8 }} icon={<UploadOutlined />}>Загрузить свой фон</Button>
             </Upload>
           )}
+        </div>
 
-          <p style={{ marginTop: 12 }}>Размер QR: {(qrSizePct * 100).toFixed(0)}%</p>
-          <Slider min={0.05} max={0.8} step={0.01} value={qrSizePct} onChange={setQrSizePct} />
+        {/* QR Size */}
+        <div className="settings-block">
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Text strong>Размер QR</Text>
+            <Text type="secondary">{(qrSizePct * 100).toFixed(0)}%</Text>
+          </div>
+          <Slider min={0.05} max={0.5} step={0.01} value={qrSizePct} onChange={setQrSizePct} />
+        </div>
 
-          <div style={{ marginTop: 20 }}>
-            <p><strong>Текстовые overlay'и:</strong></p>
-            {textOverlays.length === 0 ? (
-              <p style={{ color: '#999', fontStyle: 'italic' }}>Нет текстовых overlay'ей</p>
-            ) : (
-              textOverlays.map((overlay) => (
-                <div key={overlay.id} style={{ padding: 4, fontSize: 12 }}>
-                  {overlay.isDynamic ? (
-                    <span>"{overlay.columnSource}" из данных - {overlay.fontSize}px, {overlay.color}</span>
-                  ) : (
-                    <span>"{overlay.text}" - {overlay.fontSize}px, {overlay.color}</span>
-                  )}
-                </div>
-              ))
-            )}
+        {/* Text Overlays */}
+        <div className="settings-block" style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <Text strong>Текст на изображении</Text>
+            <Button
+              type="dashed"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={addTextOverlay}
+            >
+              Добавить
+            </Button>
           </div>
 
-          <Progress percent={progress} style={{ marginTop: 12 }} />
-        </Modal>
+          {textOverlays.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 20, background: '#fafafa', borderRadius: 6 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>Нет текстовых слоев</Text>
+            </div>
+          ) : (
+            textOverlays.map((overlay) => (
+              <div
+                key={overlay.id}
+                style={{
+                  padding: 12,
+                  marginBottom: 8,
+                  border: selectedTextId === overlay.id ? '1px solid #1890ff' : '1px solid #e8e8e8',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  backgroundColor: selectedTextId === overlay.id ? '#e6f7ff' : '#fff',
+                  transition: 'all 0.2s'
+                }}
+                onClick={() => setSelectedTextId(overlay.id)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text ellipsis style={{ maxWidth: 220, fontWeight: 500 }}>
+                    {overlay.isDynamic && overlay.columnSource ? `[${overlay.columnSource}]` : overlay.text}
+                  </Text>
+                  <Button
+                    type="text"
+                    danger
+                    size="small"
+                    icon={<DeleteOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteTextOverlay(overlay.id);
+                    }}
+                  />
+                </div>
+
+                {selectedTextId === overlay.id && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <Radio.Group
+                      size="small"
+                      value={overlay.isDynamic ? 'dynamic' : 'static'}
+                      onChange={(e) => {
+                        const isDynamic = e.target.value === 'dynamic';
+                        updateTextOverlay(overlay.id, {
+                          isDynamic,
+                          text: isDynamic ? '' : 'Ваш текст'
+                        });
+                      }}
+                      optionType="button"
+                      buttonStyle="solid"
+                    >
+                      <Radio.Button value="static">Текст</Radio.Button>
+                      <Radio.Button value="dynamic" disabled={availableColumns.length === 0}>Данные</Radio.Button>
+                    </Radio.Group>
+
+                    {overlay.isDynamic ? (
+                      <Select
+                        value={overlay.columnSource}
+                        onChange={(value) => updateTextOverlay(overlay.id, { columnSource: value })}
+                        placeholder="Выберите колонку"
+                        size="small"
+                        style={{ width: '100%' }}
+                      >
+                        {availableColumns.map(col => (
+                          <Select.Option key={col.value} value={col.value}>
+                            {col.label}
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input
+                        value={overlay.text}
+                        onChange={(e) => updateTextOverlay(overlay.id, { text: e.target.value })}
+                        placeholder="Введите текст"
+                        size="small"
+                      />
+                    )}
+
+                    <Space>
+                      <ColorPicker
+                        value={overlay.color}
+                        onChange={(color) => updateTextOverlay(overlay.id, { color: color.toHexString() })}
+                        size="small"
+                      />
+                      <Select
+                        value={overlay.fontFamily}
+                        onChange={(value) => updateTextOverlay(overlay.id, { fontFamily: value })}
+                        size="small"
+                        style={{ width: 100 }}
+                      >
+                        <Select.Option value="Arial">Arial</Select.Option>
+                        <Select.Option value="Times New Roman">Times</Select.Option>
+                        <Select.Option value="Montserrat">Montserrat</Select.Option>
+                      </Select>
+                      <Slider
+                        min={8}
+                        max={120}
+                        step={1}
+                        value={overlay.fontSize}
+                        onChange={(value) => updateTextOverlay(overlay.id, { fontSize: value })}
+                        style={{ width: 80 }}
+                      />
+                    </Space>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </div>
-    </Form>
+
+      {/* Preview Panel */}
+      <div style={{ flex: 1, background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, padding: 20 }}>
+        <div
+          style={{
+            width: modalSize,
+            height: modalSize,
+            position: "relative",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            backgroundImage: `url(${selectedBg === "user" && userBg ? userBg : selectedBg})`,
+            backgroundSize: "contain",
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "center",
+            backgroundColor: "#fff",
+          }}
+          ref={containerRef}
+        >
+          {/* QR код */}
+          {previewRow?.qr ? (
+            <img
+              src={previewRow.qr}
+              alt="QR"
+              style={{
+                position: "absolute",
+                left: previewLeft,
+                top: previewTop,
+                width: modalSize * qrSizePct,
+                height: modalSize * qrSizePct,
+                cursor: "grab",
+                userSelect: "none",
+              }}
+              onMouseDown={handleQrDrag}
+            />
+          ) : (
+            /* Placeholder QR if no data yet */
+            <div style={{
+              position: "absolute",
+              left: previewLeft,
+              top: previewTop,
+              width: modalSize * qrSizePct,
+              height: modalSize * qrSizePct,
+              border: '2px dashed #999',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.05)',
+              cursor: 'grab'
+            }} onMouseDown={handleQrDrag}>
+              QR
+            </div>
+          )}
+
+          {/* Текстовые overlay'и */}
+          {textOverlays.map((overlay) => (
+            <div
+              key={overlay.id}
+              style={{
+                position: "absolute",
+                left: overlay.position.xPct * modalSize - 50,
+                top: overlay.position.yPct * modalSize - overlay.fontSize / 2,
+                color: overlay.color,
+                fontSize: overlay.fontSize,
+                fontFamily: overlay.fontFamily,
+                fontWeight: "bold",
+                cursor: "move",
+                userSelect: "none",
+                textShadow: "0 2px 4px rgba(0,0,0,0.3)",
+                border: selectedTextId === overlay.id ? "2px dashed #1890ff" : "1px dashed rgba(255,255,255,0)",
+                padding: "4px 8px",
+                background: selectedTextId === overlay.id ? "rgba(24, 144, 255, 0.1)" : "transparent",
+                borderRadius: "4px",
+                minWidth: 100,
+                textAlign: "center",
+                whiteSpace: 'nowrap',
+              }}
+              onMouseDown={(e) => handleTextDrag(overlay.id, e)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedTextId(overlay.id);
+              }}
+            >
+              {getDisplayText(overlay, previewRow)}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <Layout style={{ minHeight: '100vh' }}>
+      <Content>
+        <div className="workspace-container">
+          {/* Header / Title Area if needed */}
+          <div style={{ marginBottom: 24 }}>
+            <Title level={3} style={{ margin: 0 }}>Генератор QR-кодов</Title>
+            <Text type="secondary">Загрузите Excel, настройте дизайн и скачайте готовые QR-коды</Text>
+          </div>
+
+          {/* Toolbar */}
+          <div className="toolbar">
+            <div className="toolbar-actions">
+              <Upload beforeUpload={handleFileUpload} showUploadList={false}>
+                <Button type="primary" icon={<FileExcelOutlined />} size="large">
+                  Загрузить Excel
+                </Button>
+              </Upload>
+
+              <Tooltip title={!data.length ? "Сначала загрузите таблицу" : "Настроить и скачать всё"}>
+                <Button
+                  onClick={() => setAllModalVisible(true)}
+                  disabled={!data.length}
+                  icon={<DownloadOutlined />}
+                  size="large"
+                >
+                  Сгенерировать все
+                </Button>
+              </Tooltip>
+            </div>
+
+            <div className="toolbar-search">
+              <div className="status-badge">
+                <Badge status={data.length ? "processing" : "default"} />
+                <span>Всего: {data.length}</span>
+              </div>
+              <div className="status-badge">
+                <Badge status="success" />
+                <span>Готово: {data.filter(r => r.qr).length}</span>
+              </div>
+              <Input
+                placeholder="Поиск по имени, ID, номеру..."
+                allowClear
+                prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                style={{ width: 280 }}
+              />
+            </div>
+          </div>
+
+          <Form form={form} component={false}>
+            <Table
+              columns={tableColumns}
+              dataSource={filteredData}
+              pagination={{ pageSize: 10 }}
+              size="middle"
+              scroll={{ x: 'max-content' }}
+              locale={{ emptyText: 'Загрузите Excel файл, чтобы начать работу' }}
+            />
+          </Form>
+
+          {/* Single Modal Editor */}
+          <Modal
+            title="Настройка и скачивание"
+            open={downloadModalVisible}
+            onCancel={() => {
+              setDownloadModalVisible(false);
+              setTextOverlays([]);
+            }}
+            onOk={handleDownloadOne}
+            okText="Скачать PNG"
+            cancelText="Отмена"
+            width={900}
+            centered
+          >
+            {renderEditorContent(selectedRow)}
+            <div style={{ textAlign: 'center', marginTop: 10 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                💡 Перетаскивайте QR-код и текст мышкой прямо на изображении
+              </Text>
+            </div>
+          </Modal>
+
+          {/* All Modal - Full Editor for Batch */}
+          <Modal
+            title="Пакетная генерация"
+            open={allModalVisible}
+            onCancel={() => setAllModalVisible(false)}
+            footer={[
+              <Button key="generate" type="primary" size="large" onClick={generateAllQrs} loading={isGeneratingAll} icon={<QrcodeOutlined />}>
+                {isGeneratingAll ? "Генерация..." : "Начать генерацию"}
+              </Button>,
+              <Button key="download" size="large" onClick={downloadAllZip} disabled={isGeneratingAll || !Object.keys(generatedQrs).length} icon={<DownloadOutlined />}>
+                Скачать ZIP
+              </Button>,
+            ]}
+            width={900}
+            centered
+          >
+            <div>
+              <div style={{ background: '#fffbe6', padding: 12, borderRadius: 6, border: '1px solid #ffe58f', marginBottom: 16 }}>
+                <Text type="warning">
+                  Настройте шаблон ниже. Эти настройки (фон, положение, размер, текст) будут применены ко <b>всем {data.length} строкам</b>.
+                </Text>
+              </div>
+
+              {renderEditorContent(data.length ? data[0] : null)}
+
+              {progress > 0 && (
+                <div style={{ marginTop: 24 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text>Прогресс генерации</Text>
+                    <Text>{progress}%</Text>
+                  </div>
+                  <Progress percent={progress} showInfo={false} />
+                </div>
+              )}
+            </div>
+          </Modal>
+        </div>
+      </Content>
+    </Layout>
   );
 };
 
-export default App; // Changed from ExcelUI to App
+export default App;
