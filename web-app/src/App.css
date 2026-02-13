@@ -1,0 +1,30 @@
+/* Ant Design overrides or specific tweaks */
+.site-layout .site-layout-background {
+  background: #fff;
+}
+
+/* Ensure Montserrat applies generally if not by AntD default */
+body {
+  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  margin: 0;
+}
+
+/* Custom scrollbar for sider if needed */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: #333;
+}
+
+/* Preview card styling tweaks */
+.ant-card-cover {
+  padding: 10px;
+  background: #f0f0f0;
+}
