@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   Button,
   Table,
@@ -74,146 +74,37 @@ interface TextOverlay {
 
 // ---------- Константы ----------
 const modalSize = 490;
-const canvasSize = 5000;
-const margin = 200;
-const scaleRatio = canvasSize / modalSize;
 
-// ---------- Вспомогательные функции ----------
-const generateQrPng = async (data: string, centerImageUrl?: string) => {
-  const qr = new QRCodeStyling({
-    width: 2000,
-    height: 2000,
-    data,
-    dotsOptions: {
-      type: "rounded",
-      gradient: {
-        type: "linear",
-        rotation: 1.5708,
-        colorStops: [
-          { offset: 0, color: "#12944C" },
-          { offset: 1, color: "#1E6E72" },
-        ],
-      },
-    },
-    cornersSquareOptions: { type: "extra-rounded" },
-    cornersDotOptions: { type: "extra-rounded" },
-    backgroundOptions: { color: "#ffffff00" },
-    image: centerImageUrl || Mlogo,
-    imageOptions: { crossOrigin: "anonymous", margin: 20, imageSize: 0.28 },
-  });
-  const blob = await qr.getRawData("png");
-  return blob as Blob;
-};
-
-const mergeQrWithBackground = async (
-  qrBlob: Blob,
-  bgSrc: string,
-  posPct: PositionPct,
-  qrSizePct: number,
-  textOverlays: TextOverlay[] = [],
-  rowData?: RowData,
-  canvasSizeParam = canvasSize,
-  marginParam = margin
-) => {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvasSizeParam;
-  canvas.height = canvasSizeParam;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas not supported");
-
-  const bgImg = new Image();
-  const qrImg = new Image();
-  bgImg.crossOrigin = "anonymous";
-  qrImg.crossOrigin = "anonymous";
-
-  return new Promise<Blob>((resolve, reject) => {
-    bgImg.onload = () => {
-      const bgAspect = bgImg.width / bgImg.height;
-      const canvasAspect = canvas.width / canvas.height;
-
-      let drawWidth, drawHeight, drawX, drawY;
-
-      if (bgAspect > canvasAspect) {
-        drawWidth = canvas.width;
-        drawHeight = canvas.width / bgAspect;
-        drawX = 0;
-        drawY = (canvas.height - drawHeight) / 2;
-      } else {
-        drawHeight = canvas.height;
-        drawWidth = canvas.height * bgAspect;
-        drawY = 0;
-        drawX = (canvas.width - drawWidth) / 2;
-      }
-
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(bgImg, drawX, drawY, drawWidth, drawHeight);
-
-      qrImg.onload = () => {
-        const maxQrSize = canvasSizeParam - marginParam * 2;
-        const targetSize = Math.min(maxQrSize, Math.round(canvasSizeParam * qrSizePct));
-        const centerX = Math.round(posPct.xPct * canvasSizeParam);
-        const centerY = Math.round(posPct.yPct * canvasSizeParam);
-
-        const drawX = Math.max(
-          marginParam,
-          Math.min(centerX - targetSize / 2, canvasSizeParam - targetSize - marginParam)
-        );
-        const drawY = Math.max(
-          marginParam,
-          Math.min(centerY - targetSize / 2, canvasSizeParam - targetSize - marginParam)
-        );
-
-        ctx.drawImage(qrImg, drawX, drawY, targetSize, targetSize);
-
-        textOverlays.forEach(overlay => {
-          let displayText = overlay.text;
-          if (overlay.isDynamic && overlay.columnSource && rowData) {
-            displayText = rowData[overlay.columnSource] || overlay.text;
-          }
-
-          const scaledFontSize = overlay.fontSize * scaleRatio;
-
-          ctx.fillStyle = overlay.color;
-          ctx.font = `bold ${scaledFontSize}px ${overlay.fontFamily}`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-
-          const textX = Math.round(overlay.position.xPct * canvasSizeParam);
-          const textY = Math.round(overlay.position.yPct * canvasSizeParam);
-
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-          ctx.shadowBlur = 15;
-          ctx.shadowOffsetX = 5;
-          ctx.shadowOffsetY = 5;
-
-          ctx.fillText(displayText, textX, textY);
-
-          ctx.shadowColor = 'transparent';
-          ctx.shadowBlur = 0;
-          ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 0;
-        });
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error("Failed to create blob"));
-          },
-          "image/png",
-          1
-        );
-      };
-      qrImg.onerror = reject;
-      qrImg.src = URL.createObjectURL(qrBlob);
-    };
-    bgImg.onerror = reject;
-    bgImg.src = bgSrc;
-  });
-};
 
 // ---------- Компонент ----------
 const App: React.FC = () => {
+  // ---------- Вспомогательные функции (внутри для доступа к стейту/контексту если надо) ----------
+  const generateQrPng = async (data: string, centerImageUrl?: string) => {
+    const qr = new QRCodeStyling({
+      width: 2000,
+      height: 2000,
+      data,
+      dotsOptions: {
+        type: "rounded",
+        gradient: {
+          type: "linear",
+          rotation: 1.5708,
+          colorStops: [
+            { offset: 0, color: "#12944C" },
+            { offset: 1, color: "#1E6E72" },
+          ],
+        },
+      },
+      cornersSquareOptions: { type: "extra-rounded" },
+      cornersDotOptions: { type: "extra-rounded" },
+      backgroundOptions: { color: "#ffffff00" },
+      image: centerImageUrl || Mlogo,
+      imageOptions: { crossOrigin: "anonymous", margin: 20, imageSize: 0.28 },
+    });
+    const blob = await qr.getRawData("png");
+    return blob as Blob;
+  };
+
   const [data, setData] = useState<RowData[]>([]);
   const [columns, setColumns] = useState<any[]>([]);
   const [form] = Form.useForm();
@@ -233,6 +124,33 @@ const App: React.FC = () => {
 
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [bgDimensions, setBgDimensions] = useState({ width: 0, height: 0 });
+
+  // Update background dimensions when selectedBg or userBg changes
+  useEffect(() => {
+    const bg = selectedBg === "user" && userBg ? userBg : selectedBg;
+    if (!bg) return;
+
+    const img = new Image();
+    img.onload = () => {
+      setBgDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = bg;
+  }, [selectedBg, userBg]);
+
+  const previewWidth = useMemo(() => {
+    if (!bgDimensions.width || !bgDimensions.height) return modalSize;
+    const aspect = bgDimensions.width / bgDimensions.height;
+    if (aspect > 1) return modalSize;
+    return modalSize * aspect;
+  }, [bgDimensions]);
+
+  const previewHeight = useMemo(() => {
+    if (!bgDimensions.width || !bgDimensions.height) return modalSize;
+    const aspect = bgDimensions.width / bgDimensions.height;
+    if (aspect > 1) return modalSize / aspect;
+    return modalSize;
+  }, [bgDimensions]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -307,14 +225,14 @@ const App: React.FC = () => {
     const overlay = textOverlays.find(t => t.id === id);
     if (!overlay) return;
 
-    const startLeft = overlay.position.xPct * modalSize;
-    const startTop = overlay.position.yPct * modalSize;
+    const startLeft = overlay.position.xPct * previewWidth;
+    const startTop = overlay.position.yPct * previewHeight;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      let newX = (startLeft + dx) / modalSize;
-      let newY = (startTop + dy) / modalSize;
+      let newX = (startLeft + dx) / previewWidth;
+      let newY = (startTop + dy) / previewHeight;
       newX = Math.min(Math.max(0, newX), 1);
       newY = Math.min(Math.max(0, newY), 1);
       updateTextOverlay(id, { position: { xPct: newX, yPct: newY } });
@@ -337,21 +255,21 @@ const App: React.FC = () => {
     // But we can just use the state qrPosPct
     const currentPreviewLeft = Math.max(
       0,
-      Math.min(modalSize - modalSize * qrSizePct, Math.round(qrPosPct.xPct * modalSize - (modalSize * qrSizePct) / 2))
+      Math.min(previewWidth - previewWidth * qrSizePct, Math.round(qrPosPct.xPct * previewWidth - (previewWidth * qrSizePct) / 2))
     );
     const currentPreviewTop = Math.max(
       0,
-      Math.min(modalSize - modalSize * qrSizePct, Math.round(qrPosPct.yPct * modalSize - (modalSize * qrSizePct) / 2))
+      Math.min(previewHeight - previewHeight * qrSizePct, Math.round(qrPosPct.yPct * previewHeight - (previewHeight * qrSizePct) / 2))
     );
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      const newLeft = Math.min(Math.max(0, currentPreviewLeft + dx), modalSize - modalSize * qrSizePct);
-      const newTop = Math.min(Math.max(0, currentPreviewTop + dy), modalSize - modalSize * qrSizePct);
+      const newLeft = Math.min(Math.max(0, currentPreviewLeft + dx), previewWidth - previewWidth * qrSizePct);
+      const newTop = Math.min(Math.max(0, currentPreviewTop + dy), previewHeight - previewHeight * qrSizePct);
       setQrPosPct({
-        xPct: (newLeft + (modalSize * qrSizePct) / 2) / modalSize,
-        yPct: (newTop + (modalSize * qrSizePct) / 2) / modalSize,
+        xPct: (newLeft + (previewWidth * qrSizePct) / 2) / previewWidth,
+        yPct: (newTop + (previewHeight * qrSizePct) / 2) / previewHeight,
       });
     };
 
@@ -437,12 +355,92 @@ const App: React.FC = () => {
 
   const previewLeft = Math.max(
     0,
-    Math.min(modalSize - modalSize * qrSizePct, Math.round(qrPosPct.xPct * modalSize - (modalSize * qrSizePct) / 2))
+    Math.min(previewWidth - previewWidth * qrSizePct, Math.round(qrPosPct.xPct * previewWidth - (previewWidth * qrSizePct) / 2))
   );
   const previewTop = Math.max(
     0,
-    Math.min(modalSize - modalSize * qrSizePct, Math.round(qrPosPct.yPct * modalSize - (modalSize * qrSizePct) / 2))
+    Math.min(previewHeight - previewHeight * qrSizePct, Math.round(qrPosPct.yPct * previewHeight - (previewHeight * qrSizePct) / 2))
   );
+
+  const mergeQrWithBackground = async (
+    qrBlob: Blob,
+    bgSrc: string,
+    posPct: PositionPct,
+    qrSizePct: number,
+    textOverlays: TextOverlay[] = [],
+    rowData?: RowData
+  ) => {
+    const bgImg = new Image();
+    const qrImg = new Image();
+    bgImg.crossOrigin = "anonymous";
+    qrImg.crossOrigin = "anonymous";
+
+    return new Promise<Blob>((resolve, reject) => {
+      bgImg.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = bgImg.naturalWidth;
+        canvas.height = bgImg.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas not supported"));
+
+        ctx.drawImage(bgImg, 0, 0);
+
+        qrImg.onload = () => {
+          const targetSize = Math.round(canvas.width * qrSizePct);
+          const centerX = Math.round(posPct.xPct * canvas.width);
+          const centerY = Math.round(posPct.yPct * canvas.height);
+
+          const drawX = centerX - targetSize / 2;
+          const drawY = centerY - targetSize / 2;
+
+          ctx.drawImage(qrImg, drawX, drawY, targetSize, targetSize);
+
+          textOverlays.forEach(overlay => {
+            let displayText = overlay.text;
+            if (overlay.isDynamic && overlay.columnSource && rowData) {
+              displayText = rowData[overlay.columnSource] || overlay.text;
+            }
+
+            const currentScaleRatio = canvas.width / previewWidth;
+            const scaledFontSize = overlay.fontSize * currentScaleRatio;
+
+            ctx.fillStyle = overlay.color;
+            ctx.font = `bold ${scaledFontSize}px ${overlay.fontFamily}`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            const textX = Math.round(overlay.position.xPct * canvas.width);
+            const textY = Math.round(overlay.position.yPct * canvas.height);
+
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+            ctx.shadowBlur = 15 * currentScaleRatio;
+            ctx.shadowOffsetX = 5 * currentScaleRatio;
+            ctx.shadowOffsetY = 5 * currentScaleRatio;
+
+            ctx.fillText(displayText, textX, textY);
+
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+          });
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error("Failed to create blob"));
+            },
+            "image/png",
+            1
+          );
+        };
+        qrImg.onerror = reject;
+        qrImg.src = URL.createObjectURL(qrBlob);
+      };
+      bgImg.onerror = reject;
+      bgImg.src = bgSrc;
+    });
+  };
 
   const handleDownloadOne = async () => {
     if (!selectedRow || !selectedRow.qrBlob) return;
@@ -540,7 +538,7 @@ const App: React.FC = () => {
     {
       title: 'QR',
       key: 'qr_preview',
-      width: 80,
+      width: 60,
       align: 'center',
       render: (_, record) => (
         record.qr ? (
@@ -642,7 +640,7 @@ const App: React.FC = () => {
             <Text strong>Размер QR</Text>
             <Text type="secondary">{(qrSizePct * 100).toFixed(0)}%</Text>
           </div>
-          <Slider min={0.05} max={0.5} step={0.01} value={qrSizePct} onChange={setQrSizePct} />
+          <Slider min={0.05} max={0.8} step={0.01} value={qrSizePct} onChange={setQrSizePct} />
         </div>
 
         {/* Text Overlays */}
@@ -773,12 +771,12 @@ const App: React.FC = () => {
       <div style={{ flex: 1, background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, padding: 20 }}>
         <div
           style={{
-            width: modalSize,
-            height: modalSize,
+            width: previewWidth,
+            height: previewHeight,
             position: "relative",
             boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
             backgroundImage: `url(${selectedBg === "user" && userBg ? userBg : selectedBg})`,
-            backgroundSize: "contain",
+            backgroundSize: "cover",
             backgroundRepeat: "no-repeat",
             backgroundPosition: "center",
             backgroundColor: "#fff",
@@ -794,8 +792,8 @@ const App: React.FC = () => {
                 position: "absolute",
                 left: previewLeft,
                 top: previewTop,
-                width: modalSize * qrSizePct,
-                height: modalSize * qrSizePct,
+                width: previewWidth * qrSizePct,
+                height: previewWidth * qrSizePct,
                 cursor: "grab",
                 userSelect: "none",
               }}
@@ -807,8 +805,8 @@ const App: React.FC = () => {
               position: "absolute",
               left: previewLeft,
               top: previewTop,
-              width: modalSize * qrSizePct,
-              height: modalSize * qrSizePct,
+              width: previewWidth * qrSizePct,
+              height: previewWidth * qrSizePct,
               border: '2px dashed #999',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'rgba(0,0,0,0.05)',
@@ -824,8 +822,8 @@ const App: React.FC = () => {
               key={overlay.id}
               style={{
                 position: "absolute",
-                left: overlay.position.xPct * modalSize - 50,
-                top: overlay.position.yPct * modalSize - overlay.fontSize / 2,
+                left: overlay.position.xPct * previewWidth,
+                top: overlay.position.yPct * previewHeight,
                 color: overlay.color,
                 fontSize: overlay.fontSize,
                 fontFamily: overlay.fontFamily,
@@ -840,6 +838,7 @@ const App: React.FC = () => {
                 minWidth: 100,
                 textAlign: "center",
                 whiteSpace: 'nowrap',
+                transform: "translate(-50%, -50%)",
               }}
               onMouseDown={(e) => handleTextDrag(overlay.id, e)}
               onClick={(e) => {
