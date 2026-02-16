@@ -38,8 +38,8 @@ import "./App.css";
 
 import Mlogo from "./assets/logo.png";
 import Bg1 from "./assets/bg.png";
-import Bg2 from "./assets/bg.png";
-import Bg3 from "./assets/bg.png";
+// import Bg2 from "./assets/bg.png";
+// import Bg3 from "./assets/bg.png";
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -70,6 +70,7 @@ interface TextOverlay {
   fontFamily: string;
   columnSource?: string;
   isDynamic: boolean;
+  letterSpacing?: number;
 }
 
 // ---------- Константы ----------
@@ -120,7 +121,7 @@ const App: React.FC = () => {
   const [progress, setProgress] = useState<number>(0);
   const [searchText, setSearchText] = useState("");
   const [saveColumns] = useState<string[]>([]);
-  const [customNamePattern] = useState<string>("");
+  const [customNamePattern, setCustomNamePattern] = useState<string>("{name}");
 
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
@@ -156,8 +157,6 @@ const App: React.FC = () => {
 
   const bgTemplates = [
     { label: "Фон 1", value: Bg1 },
-    { label: "Фон 2", value: Bg2 },
-    { label: "Фон 3", value: Bg3 },
     { label: "Свой фон", value: "user" },
   ];
 
@@ -171,13 +170,31 @@ const App: React.FC = () => {
   }, [columns]);
 
   const getFileName = (row: RowData) => {
-    if (customNamePattern.trim()) {
-      let result = customNamePattern;
-      Object.keys(row).forEach((key) => {
-        if (typeof row[key] === "string") {
-          result = result.replaceAll(`{${key}}`, row[key]);
+    let result = customNamePattern.trim();
+
+    if (result) {
+      // Replace system fields
+      const systemFields = ['_link', 'name', 'number'];
+      systemFields.forEach(field => {
+        const placeholder = field === '_link' ? 'ID' : field;
+        result = result.replaceAll(`{${field}}`, String(row[field] || ''));
+        if (placeholder !== field) {
+          result = result.replaceAll(`{${placeholder}}`, String(row[field] || ''));
         }
       });
+
+      // Replace dynamic Excel columns by label
+      availableColumns.forEach(col => {
+        result = result.replaceAll(`{${col.label}}`, String(row[col.value] || ''));
+      });
+
+      // Also support internal keys as fallback
+      Object.keys(row).forEach(key => {
+        if (key.startsWith('col_')) {
+          result = result.replaceAll(`{${key}}`, String(row[key] || ''));
+        }
+      });
+
       return result.replace(/[<>:"/\\|?*]+/g, "_") || row.key;
     }
 
@@ -198,7 +215,8 @@ const App: React.FC = () => {
       fontSize: 24,
       fontFamily: "Arial",
       position: { xPct: 0.5, yPct: 0.1 },
-      isDynamic: false
+      isDynamic: false,
+      letterSpacing: 0
     };
     setTextOverlays([...textOverlays, newOverlay]);
     setSelectedTextId(newOverlay.id);
@@ -250,26 +268,17 @@ const App: React.FC = () => {
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    // Calculate current pixel position based on percentage
-    // We need to re-calculate here because we don't have direct access to previewLeft/Top state inside this closure easily without dep change
-    // But we can just use the state qrPosPct
-    const currentPreviewLeft = Math.max(
-      0,
-      Math.min(previewWidth - previewWidth * qrSizePct, Math.round(qrPosPct.xPct * previewWidth - (previewWidth * qrSizePct) / 2))
-    );
-    const currentPreviewTop = Math.max(
-      0,
-      Math.min(previewHeight - previewHeight * qrSizePct, Math.round(qrPosPct.yPct * previewHeight - (previewHeight * qrSizePct) / 2))
-    );
+
+    const currentPreviewLeft = qrPosPct.xPct * previewWidth;
+    const currentPreviewTop = qrPosPct.yPct * previewHeight;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      const newLeft = Math.min(Math.max(0, currentPreviewLeft + dx), previewWidth - previewWidth * qrSizePct);
-      const newTop = Math.min(Math.max(0, currentPreviewTop + dy), previewHeight - previewHeight * qrSizePct);
+
       setQrPosPct({
-        xPct: (newLeft + (previewWidth * qrSizePct) / 2) / previewWidth,
-        yPct: (newTop + (previewHeight * qrSizePct) / 2) / previewHeight,
+        xPct: (currentPreviewLeft + dx) / previewWidth,
+        yPct: (currentPreviewTop + dy) / previewHeight,
       });
     };
 
@@ -353,14 +362,9 @@ const App: React.FC = () => {
     setDownloadModalVisible(true);
   };
 
-  const previewLeft = Math.max(
-    0,
-    Math.min(previewWidth - previewWidth * qrSizePct, Math.round(qrPosPct.xPct * previewWidth - (previewWidth * qrSizePct) / 2))
-  );
-  const previewTop = Math.max(
-    0,
-    Math.min(previewHeight - previewHeight * qrSizePct, Math.round(qrPosPct.yPct * previewHeight - (previewHeight * qrSizePct) / 2))
-  );
+  const qrSidePreview = previewWidth * qrSizePct;
+  const previewLeft = qrPosPct.xPct * previewWidth;
+  const previewTop = qrPosPct.yPct * previewHeight;
 
   const mergeQrWithBackground = async (
     qrBlob: Blob,
@@ -386,12 +390,9 @@ const App: React.FC = () => {
         ctx.drawImage(bgImg, 0, 0);
 
         qrImg.onload = () => {
-          const targetSize = Math.round(canvas.width * qrSizePct);
-          const centerX = Math.round(posPct.xPct * canvas.width);
-          const centerY = Math.round(posPct.yPct * canvas.height);
-
-          const drawX = centerX - targetSize / 2;
-          const drawY = centerY - targetSize / 2;
+          const targetSize = canvas.width * qrSizePct;
+          const drawX = (posPct.xPct * canvas.width) - (targetSize / 2);
+          const drawY = (posPct.yPct * canvas.height) - (targetSize / 2);
 
           ctx.drawImage(qrImg, drawX, drawY, targetSize, targetSize);
 
@@ -403,26 +404,36 @@ const App: React.FC = () => {
 
             const currentScaleRatio = canvas.width / previewWidth;
             const scaledFontSize = overlay.fontSize * currentScaleRatio;
+            const scaledLetterSpacing = (overlay.letterSpacing || 0) * currentScaleRatio;
 
             ctx.fillStyle = overlay.color;
-            ctx.font = `bold ${scaledFontSize}px ${overlay.fontFamily}`;
+            ctx.font = `bold ${scaledFontSize}px "${overlay.fontFamily}"`;
+
+            if ('letterSpacing' in ctx) {
+              (ctx as any).letterSpacing = `${scaledLetterSpacing}px`;
+            }
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
 
-            const textX = Math.round(overlay.position.xPct * canvas.width);
-            const textY = Math.round(overlay.position.yPct * canvas.height);
+            const textX = overlay.position.xPct * canvas.width;
+            const textY = overlay.position.yPct * canvas.height;
 
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-            ctx.shadowBlur = 15 * currentScaleRatio;
-            ctx.shadowOffsetX = 5 * currentScaleRatio;
-            ctx.shadowOffsetY = 5 * currentScaleRatio;
+            // Apply shadow with same scaling
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 4 * currentScaleRatio;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 2 * currentScaleRatio;
 
             ctx.fillText(displayText, textX, textY);
 
+            // Reset shadow
             ctx.shadowColor = 'transparent';
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
+            if ('letterSpacing' in ctx) {
+              (ctx as any).letterSpacing = '0px';
+            }
           });
 
           canvas.toBlob(
@@ -500,10 +511,22 @@ const App: React.FC = () => {
     }
     try {
       const zip = new JSZip();
+      const usedNames = new Set<string>();
+
       data.forEach((row) => {
         const blob = generatedQrs[row.key] || row.mergedBlob;
         if (!blob) return;
-        const name = `${getFileName(row)}.png`;
+
+        let baseName = getFileName(row);
+        let name = `${baseName}.png`;
+        let counter = 1;
+
+        while (usedNames.has(name)) {
+          name = `${baseName}_${counter}.png`;
+          counter++;
+        }
+
+        usedNames.add(name);
         zip.file(name, blob);
       });
       const content = await zip.generateAsync({ type: "blob" });
@@ -759,6 +782,17 @@ const App: React.FC = () => {
                         style={{ width: 80 }}
                       />
                     </Space>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 12, minWidth: 60 }}>Интервал:</Text>
+                      <Slider
+                        min={-5}
+                        max={30}
+                        step={0.5}
+                        value={overlay.letterSpacing || 0}
+                        onChange={(value) => updateTextOverlay(overlay.id, { letterSpacing: value })}
+                        style={{ flex: 1 }}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -792,8 +826,9 @@ const App: React.FC = () => {
                 position: "absolute",
                 left: previewLeft,
                 top: previewTop,
-                width: previewWidth * qrSizePct,
-                height: previewWidth * qrSizePct,
+                width: qrSidePreview,
+                height: qrSidePreview,
+                transform: "translate(-50%, -50%)",
                 cursor: "grab",
                 userSelect: "none",
               }}
@@ -805,8 +840,9 @@ const App: React.FC = () => {
               position: "absolute",
               left: previewLeft,
               top: previewTop,
-              width: previewWidth * qrSizePct,
-              height: previewWidth * qrSizePct,
+              width: qrSidePreview,
+              height: qrSidePreview,
+              transform: "translate(-50%, -50%)",
               border: '2px dashed #999',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'rgba(0,0,0,0.05)',
@@ -832,13 +868,13 @@ const App: React.FC = () => {
                 userSelect: "none",
                 textShadow: "0 2px 4px rgba(0,0,0,0.3)",
                 border: selectedTextId === overlay.id ? "2px dashed #1890ff" : "1px dashed rgba(255,255,255,0)",
-                padding: "4px 8px",
                 background: selectedTextId === overlay.id ? "rgba(24, 144, 255, 0.1)" : "transparent",
                 borderRadius: "4px",
-                minWidth: 100,
                 textAlign: "center",
                 whiteSpace: 'nowrap',
                 transform: "translate(-50%, -50%)",
+                letterSpacing: overlay.letterSpacing ? `${overlay.letterSpacing}px` : 'normal',
+                lineHeight: 1,
               }}
               onMouseDown={(e) => handleTextDrag(overlay.id, e)}
               onClick={(e) => {
@@ -859,10 +895,66 @@ const App: React.FC = () => {
       <Content>
         <div className="workspace-container">
           {/* Header / Title Area if needed */}
-          <div style={{ marginBottom: 24 }}>
-            <Title level={3} style={{ margin: 0 }}>Генератор QR-кодов</Title>
-            <Text type="secondary">Загрузите Excel, настройте дизайн и скачайте готовые QR-коды</Text>
+          <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <Title level={3} style={{ margin: 0 }}>Генератор QR-кодов</Title>
+              <Text type="secondary">Загрузите Excel, настройте дизайн и скачайте готовые QR-коды</Text>
+            </div>
           </div>
+
+          {/* Naming Settings */}
+          {data.length > 0 && (
+            <div style={{
+              marginBottom: 24,
+              padding: '16px 20px',
+              background: '#f8fafc',
+              borderRadius: 12,
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}>
+              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Text strong style={{ fontSize: 14, color: '#1e293b' }}>Шаблон имени файла:</Text>
+                <Tooltip title="Используйте {название_колонки} для динамического имени. Например: {name}_{number}">
+                  <Text type="secondary" style={{ cursor: 'help', fontSize: 12 }}>(инфо)</Text>
+                </Tooltip>
+              </div>
+              <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                <Input
+                  size="large"
+                  placeholder="Например: {name}_{number}"
+                  value={customNamePattern}
+                  onChange={e => setCustomNamePattern(e.target.value)}
+                  style={{ borderRadius: 8 }}
+                  prefix={<Text type="secondary" style={{ marginRight: 4 }}>Шаблон:</Text>}
+                />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Доступные поля:</Text>
+                  {/* Hardcoded system fields */}
+                  {['_link', 'name', 'number'].map(field => (
+                    <Tag
+                      key={field}
+                      color="blue"
+                      style={{ cursor: 'pointer', borderRadius: 4, padding: '2px 8px' }}
+                      onClick={() => setCustomNamePattern(prev => prev + `{${field}}`)}
+                    >
+                      {`{${field === '_link' ? 'ID' : field}}`}
+                    </Tag>
+                  ))}
+                  {/* Dynamic Excel columns */}
+                  {availableColumns.map(col => (
+                    <Tag
+                      key={col.value}
+                      color="green"
+                      style={{ cursor: 'pointer', borderRadius: 4, padding: '2px 8px' }}
+                      onClick={() => setCustomNamePattern(prev => prev + `{${col.label}}`)}
+                    >
+                      {`{${col.label}}`}
+                    </Tag>
+                  ))}
+                </div>
+              </Space>
+            </div>
+          )}
 
           {/* Toolbar */}
           <div className="toolbar">
