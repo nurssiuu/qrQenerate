@@ -162,7 +162,12 @@ const App: React.FC = () => {
 
   const availableColumns = useMemo(() => {
     return columns
-      .filter(col => col.dataIndex && !['qr', 'status', 'actions'].includes(col.dataIndex))
+      .filter(col => {
+        if (!col.dataIndex || ['qr', 'status', 'actions'].includes(col.dataIndex)) return false;
+        // Don't show hardcoded fields in dynamic list if they are redundant
+        if (['col_0', 'col_1'].includes(col.dataIndex)) return false;
+        return true;
+      })
       .map(col => ({
         label: col.title || col.dataIndex,
         value: col.dataIndex
@@ -308,19 +313,59 @@ const App: React.FC = () => {
         const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
         if (!rows.length) return;
 
-        const cols: any[] = rows[0].slice(1).map((h, idx) => ({
-          title: h,
-          dataIndex: `col_${idx}`,
-          key: `col_${idx}`,
-          editable: true,
-        }));
+        const headerRow = rows[0] || [];
+
+        // Find columns that have at least some data (header or some row value)
+        const validColumnIndices: number[] = [];
+
+        // Count total potential columns from all rows to be safe
+        let maxCols = headerRow.length;
+        for (let i = 1; i < rows.length; i++) {
+          if (rows[i].length > maxCols) maxCols = rows[i].length;
+        }
+
+        for (let colIdx = 0; colIdx < maxCols; colIdx++) {
+          const hasHeader = headerRow[colIdx] && String(headerRow[colIdx]).trim() !== "";
+          let hasData = false;
+          for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
+            if (rows[rowIdx][colIdx] && String(rows[rowIdx][colIdx]).trim() !== "") {
+              hasData = true;
+              break;
+            }
+          }
+
+          if (hasHeader || hasData) {
+            validColumnIndices.push(colIdx);
+          }
+        }
+
+        // We assume col 0 is _link (ID), col 1 is name, col 2 is number as per current logic
+        // But we must check if they exist in validColumnIndices
+
+        const cols: any[] = validColumnIndices
+          .filter(idx => idx > 0) // Skip index 0 as it's mapped to _link
+          .map((idx) => ({
+            title: headerRow[idx] || `Колонка ${idx}`,
+            dataIndex: `col_${idx - 1}`,
+            key: `col_${idx - 1}`,
+            editable: true,
+          }));
 
         const tableData: RowData[] = [];
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
-          const obj: RowData = { key: String(i), _link: row[0], name: row[1], number: row[2] };
-          row.slice(1).forEach((val, idx) => {
-            obj[`col_${idx}`] = val;
+          const obj: RowData = {
+            key: String(i),
+            _link: row[0] || "",
+            name: row[1] || "",
+            number: row[2] || ""
+          };
+
+          // Map other valid columns
+          validColumnIndices.forEach(idx => {
+            if (idx > 0) {
+              obj[`col_${idx - 1}`] = row[idx] || "";
+            }
           });
           tableData.push(obj);
         }
