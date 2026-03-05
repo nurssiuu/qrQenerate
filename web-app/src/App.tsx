@@ -106,6 +106,34 @@ const App: React.FC = () => {
     return blob as Blob;
   };
 
+  const getWhiteQrBlob = async (qrBlob: Blob, size: number = 2000): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas not supported"));
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, size, size);
+        ctx.drawImage(img, 0, 0, size, size);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("Failed to create blob"));
+          },
+          "image/png",
+          1
+        );
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(qrBlob);
+    });
+  };
+
   const [data, setData] = useState<RowData[]>([]);
   const [columns, setColumns] = useState<any[]>([]);
   const [form] = Form.useForm();
@@ -161,17 +189,20 @@ const App: React.FC = () => {
   ];
 
   const availableColumns = useMemo(() => {
-    return columns
+    const list = columns
       .filter(col => {
         if (!col.dataIndex || ['qr', 'status', 'actions'].includes(col.dataIndex)) return false;
-        // Don't show hardcoded fields in dynamic list if they are redundant
-        if (['col_0', 'col_1'].includes(col.dataIndex)) return false;
         return true;
       })
       .map(col => ({
         label: col.title || col.dataIndex,
         value: col.dataIndex
       }));
+
+    // Также добавим самую первую колонку (ID) в список, чтобы её тоже можно было вывести
+    list.unshift({ label: 'ID', value: '_link' });
+
+    return list;
   }, [columns]);
 
   const getFileName = (row: RowData) => {
@@ -352,7 +383,7 @@ const App: React.FC = () => {
           }));
 
         const tableData: RowData[] = [];
-        for (let i = 1; i < rows.length; i++) {
+        for (let i = 2; i < rows.length; i++) {
           const row = rows[i];
           const obj: RowData = {
             key: String(i),
@@ -582,6 +613,70 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDownloadRawOne = async () => {
+    if (!selectedRow || !selectedRow.qrBlob) return;
+    try {
+      const whiteQrBlob = await getWhiteQrBlob(selectedRow.qrBlob);
+      saveAs(whiteQrBlob, `${getFileName(selectedRow)}_qr.png`);
+      message.success("QR сохранен!");
+    } catch {
+      message.error("Ошибка при создании изображения");
+    }
+  };
+
+  const downloadAllRawZip = async () => {
+    if (!data.length) return message.info("Нет данных");
+    try {
+      setIsGeneratingAll(true);
+      setProgress(0);
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        let currentQrBlob = row.qrBlob;
+
+        if (!currentQrBlob) {
+          try {
+            currentQrBlob = await generateQrPng(row._link);
+            row.qrBlob = currentQrBlob;
+            row.qr = URL.createObjectURL(currentQrBlob);
+          } catch {
+            continue;
+          }
+        }
+
+        try {
+          const whiteQrBlob = await getWhiteQrBlob(currentQrBlob);
+
+          let baseName = getFileName(row);
+          let name = `${baseName}_qr.png`;
+          let counter = 1;
+
+          while (usedNames.has(name)) {
+            name = `${baseName}_qr_${counter}.png`;
+            counter++;
+          }
+
+          usedNames.add(name);
+          zip.file(name, whiteQrBlob);
+        } catch (err) {
+          console.warn(err);
+        }
+        setProgress(Math.round(((i + 1) / data.length) * 100));
+      }
+
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, "All_Only_QR.zip");
+      message.success("ZIP с QR-кодами скачан");
+    } catch {
+      message.error("Ошибка при создании архива");
+    } finally {
+      setIsGeneratingAll(false);
+      setProgress(0);
+    }
+  };
+
   // Define fixed columns
   const tableColumns: ColumnsType<RowData> = [
     // Data columns first
@@ -777,6 +872,7 @@ const App: React.FC = () => {
                     >
                       <Radio.Button value="static">Текст</Radio.Button>
                       <Radio.Button value="dynamic" disabled={availableColumns.length === 0}>Данные</Radio.Button>
+
                     </Radio.Group>
 
                     {overlay.isDynamic ? (
@@ -1061,9 +1157,20 @@ const App: React.FC = () => {
               setDownloadModalVisible(false);
               setTextOverlays([]);
             }}
-            onOk={handleDownloadOne}
-            okText="Скачать PNG"
-            cancelText="Отмена"
+            footer={[
+              <Button key="downloadRaw" onClick={handleDownloadRawOne} icon={<QrcodeOutlined />}>
+                Скачать только QR
+              </Button>,
+              <Button key="cancel" onClick={() => {
+                setDownloadModalVisible(false);
+                setTextOverlays([]);
+              }}>
+                Отмена
+              </Button>,
+              <Button key="download" type="primary" onClick={handleDownloadOne} icon={<DownloadOutlined />}>
+                Скачать с фоном
+              </Button>,
+            ]}
             width={900}
             centered
           >
@@ -1083,6 +1190,9 @@ const App: React.FC = () => {
             footer={[
               <Button key="generate" type="primary" size="large" onClick={generateAllQrs} loading={isGeneratingAll} icon={<QrcodeOutlined />}>
                 {isGeneratingAll ? "Генерация..." : "Начать генерацию"}
+              </Button>,
+              <Button key="downloadRawAll" size="large" onClick={downloadAllRawZip} disabled={isGeneratingAll} icon={<QrcodeOutlined />}>
+                Скачать только QR (ZIP)
               </Button>,
               <Button key="download" size="large" onClick={downloadAllZip} disabled={isGeneratingAll || !Object.keys(generatedQrs).length} icon={<DownloadOutlined />}>
                 Скачать ZIP
